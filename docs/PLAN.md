@@ -138,6 +138,155 @@ TapTap 制造（UrhoX 引擎）缺乏可视化 UI 编辑器。开发者在编写
 
 ---
 
+## Phase 1 实现计划
+
+### 总览
+
+| 步骤 | 内容 | 依赖 |
+|------|------|------|
+| 1 | UrhoX 侧：json_to_ui.lua 核心加载器 | 无 |
+| 2 | UrhoX 侧：在 TapTap 制造中验证运行 | 步骤 1 |
+| 3 | Godot 侧：JSON → 节点树（导入预览） | 无 |
+| 4 | Godot 侧：节点树 → JSON（导出） | 步骤 3 |
+| 5 | 端到端验证：Godot 导出 → UrhoX 加载 | 步骤 2 + 4 |
+
+步骤 1 和 3 无依赖关系，可并行开发。
+
+---
+
+### 步骤 1：UrhoX json_to_ui.lua
+
+**输出文件**: `scripts/json_to_ui.lua`
+
+**模块拆解**:
+
+```
+json_to_ui.lua
+├── UILoader.load(path)        -- 入口：读 JSON → 构建 UI 树 → 返回 ViewRoot
+├── buildNode(nodeData)        -- 递归：解析单个节点 → 创建 UI 组件
+├── applyProps(component, props) -- 设置布局/样式属性
+└── ViewRoot                   -- 返回对象：持有引用，提供 FindById 等接口
+```
+
+**实现顺序**:
+
+1. **JSON 解析** — 使用 cjson（UrhoX 内置），读取文件并解码
+2. **节点工厂** — type 字符串 → UI 组件映射
+   - "Panel" → UI.Panel
+   - "Label" → UI.Label
+   - "Button" → UI.Button
+   - "Image" → UI.Image
+3. **属性映射** — JSON props → UI 组件属性
+   - 布局属性：直接透传（UrhoX UI 原生支持 Flexbox）
+   - 样式属性：映射到对应 setter
+   - 组件专属：text, src, variant 等
+4. **ViewRoot 类** — 提供运行时接口
+   - :FindById(id) → 从 id 索引表中查找
+   - 组件方法：SetText, SetVisible, SetDisabled, SetStyle
+   - 事件绑定：onClick, onValueChange
+5. **id 注册** — 构建时收集所有带 id 的节点到查找表
+
+**验收标准**:
+- 加载 `gotap-ui/examples/main_menu.json` 能正确显示菜单界面
+- FindById 能找到节点并动态修改文本
+- onClick 事件能正常触发
+
+---
+
+### 步骤 2：UrhoX 侧验证
+
+**方法**: 创建测试入口 `scripts/test_ui_loader.lua`
+
+```lua
+local UILoader = require("json_to_ui")
+local view = UILoader.load("UI/main_menu.json")
+view:FindById("title"):SetText("GoTap UI 测试")
+view:FindById("btn_start").onClick = function()
+    print("按钮被点击！")
+end
+```
+
+**验收标准**:
+- 构建通过
+- 预览中能看到正确渲染的 UI
+- 点击按钮有响应
+
+---
+
+### 步骤 3：Godot JSON → 节点树（导入预览）
+
+**输出文件**: `gotap-ui/godot/addons/gotap_ui/`
+
+**模块拆解**:
+
+```
+gotap_ui/
+├── plugin.cfg              -- 插件声明
+├── plugin.gd              -- EditorPlugin 入口
+├── ui_importer.gd         -- JSON → Godot 节点树
+└── ui_node_factory.gd     -- type → Godot 节点映射
+```
+
+**映射规则**:
+
+| JSON type | Godot 节点 | 说明 |
+|-----------|-----------|------|
+| Panel (column) | VBoxContainer | flexDirection=column |
+| Panel (row) | HBoxContainer | flexDirection=row |
+| Panel (absolute) | Control | 有 absolute 子元素时 |
+| Label | Label | |
+| Button | Button | |
+| Image | TextureRect | |
+
+**属性映射**:
+
+| JSON prop | Godot 实现 |
+|-----------|-----------|
+| width/height (px) | custom_minimum_size |
+| flexGrow | size_flags_horizontal/vertical = SIZE_EXPAND_FILL + stretch_ratio |
+| gap | add_theme_constant_override("separation", value) |
+| padding | 包裹 MarginContainer |
+| backgroundColor | StyleBoxFlat 背景 |
+| borderRadius | StyleBoxFlat.corner_radius |
+| fontSize | add_theme_font_size_override |
+| color | add_theme_color_override |
+
+**验收标准**:
+- 加载 main_menu.json → Godot 中显示居中的菜单界面
+- 加载 game_hud.json → 顶栏血条 + 底栏技能按钮正确排列
+
+---
+
+### 步骤 4：Godot 节点树 → JSON（导出）
+
+**输出文件**: `gotap_ui/ui_exporter.gd`
+
+**逻辑**: 递归遍历选中的节点树，反向映射为 JSON 结构
+
+**导出触发方式**: 编辑器顶部菜单 / Dock 面板按钮
+
+**关键规则**:
+- 只导出标记为 UI 根节点的子树（通过 metadata 或 group 标记）
+- 节点名 → id（如果是合法标识符）
+- Container 类型 → Panel + 对应 flexDirection
+- 样式 override → props
+
+**验收标准**:
+- 在 Godot 中搭建菜单 → 导出 → 重新导入 → 视觉一致
+- 导出的 JSON 符合 SPEC.md 格式
+
+---
+
+### 步骤 5：端到端验证
+
+1. 在 Godot 中搭建一个完整 UI 界面
+2. 导出为 JSON
+3. 放入 UrhoX 项目 assets/UI/
+4. UrhoX 加载渲染
+5. 对比两端视觉效果，确认布局一致
+
+---
+
 ## 未来考虑（暂不实现，记录备忘）
 
 | 话题 | 思考 |
