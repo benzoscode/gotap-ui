@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "root": {
+    "type": "Panel",
+    "props": {
+      "width": "100%",
+      "height": "100%",
+      "flexDirection": "column",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "gap": 20,
+      "backgroundColor": "#1a1a2e"
+    },
+    "children": [
+      { "id": "title", "type": "Label", "props": { "text": "我的游戏", "fontSize": 48, "color": "#ffffff", "fontWeight": "bold" } },
+      { "id": "btn_start", "type": "Button", "props": { "text": "开始游戏", "width": 240, "height": 56, "variant": "primary" } },
+      { "id": "btn_settings", "type": "Button", "props": { "text": "设置", "width": 240, "height": 56 } },
+      { "id": "btn_quit", "type": "Button", "props": { "text": "退出", "width": 240, "height": 56, "variant": "danger" } }
+    ]
+  }
+}
